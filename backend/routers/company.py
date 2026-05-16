@@ -13,20 +13,23 @@ router = APIRouter(prefix="/api/company", tags=["company"])
 
 @router.get("/debug")
 async def debug(name: str = Query(..., min_length=2)):
-    """Temporary endpoint to diagnose which scrapers return data."""
-    results = await asyncio.gather(
-        scrape_glassdoor(name, max_reviews=3),
-        scrape_indeed(name, max_reviews=3),
-        scrape_reddit(name, max_posts=5),
-        scrape_linkedin(name, max_results=2),
-        scrape_wikipedia(name),
-        return_exceptions=True,
-    )
-    labels = ["glassdoor", "indeed", "reddit", "linkedin", "wikipedia"]
-    return {
-        label: len(r) if isinstance(r, list) else str(r)
-        for label, r in zip(labels, results)
-    }
+    """Run each scraper sequentially and report results + errors."""
+    import traceback
+    out = {}
+    for label, coro in [
+        ("wikipedia", scrape_wikipedia(name)),
+        ("reddit",    scrape_reddit(name, max_posts=5)),
+        ("indeed",    scrape_indeed(name, max_reviews=3)),
+        ("glassdoor", scrape_glassdoor(name, max_reviews=3)),
+        ("linkedin",  scrape_linkedin(name, max_results=2)),
+    ]:
+        try:
+            r = await coro
+            sample = r[0].body[:100] if r else None
+            out[label] = {"count": len(r), "sample": sample}
+        except Exception as e:
+            out[label] = {"error": traceback.format_exc()[-400:]}
+    return out
 
 
 @router.get("/analyze", response_model=CompanyAnalysis)
