@@ -1,38 +1,19 @@
-import httpx
 import re
 from bs4 import BeautifulSoup
 from models.schemas import Review
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Referer": "https://www.google.com/",
-    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest": "document",
-    "sec-fetch-mode": "navigate",
-    "sec-fetch-site": "cross-site",
-}
+from scrapers.proxy import proxied_client
 
 
 async def scrape_glassdoor(company_name: str, max_reviews: int = 15) -> list[Review]:
     reviews: list[Review] = []
-
     slug = re.sub(r"[^a-z0-9]+", "-", company_name.lower()).strip("-")
+
     urls_to_try = [
         f"https://www.glassdoor.com/Reviews/{slug}-reviews-SRCH_KE0,{len(company_name)}.htm",
         f"https://www.glassdoor.com/Search/results.htm?keyword={company_name.replace(' ', '+')}",
     ]
 
-    async with httpx.AsyncClient(
-        headers=HEADERS, follow_redirects=True, timeout=20
-    ) as client:
+    async with proxied_client(timeout=30) as client:
         html = None
         for url in urls_to_try:
             try:
