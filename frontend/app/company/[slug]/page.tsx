@@ -5,7 +5,6 @@ import Link from "next/link";
 import { analyzeCompany, type CompanyAnalysis } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import ToxicityMeter from "@/components/ToxicityMeter";
 import CultureChart from "@/components/CultureChart";
@@ -43,6 +42,7 @@ export default function CompanyPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string>("All");
+  const [activeTab, setActiveTab] = useState<"all" | "negative" | "positive">("all");
 
   const fetchData = async () => {
     setLoading(true);
@@ -258,46 +258,52 @@ export default function CompanyPage({
               </div>
             </div>
 
-            <Tabs defaultValue="all">
-              <TabsList className="mb-4 bg-card">
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="negative">Negative</TabsTrigger>
-                <TabsTrigger value="positive">Positive</TabsTrigger>
-              </TabsList>
+            {/* Sentiment tabs — plain state, no Tabs component */}
+            {(() => {
+              const negCount = filteredReviews.filter(r => r.sentiment === "negative").length;
+              const posCount = filteredReviews.filter(r => r.sentiment === "positive").length;
+              const tabReviews =
+                activeTab === "negative" ? filteredReviews.filter(r => r.sentiment === "negative") :
+                activeTab === "positive" ? filteredReviews.filter(r => r.sentiment === "positive") :
+                filteredReviews;
 
-              <TabsContent value="all">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {filteredReviews.map((r, i) => (
-                    <ReviewCard key={i} review={r} />
-                  ))}
-                  {filteredReviews.length === 0 && (
-                    <p className="text-muted-foreground text-sm col-span-2 text-center py-8">
-                      No reviews from this source.
-                    </p>
-                  )}
-                </div>
-              </TabsContent>
+              return (
+                <>
+                  <div className="flex gap-1 mb-4 p-1 rounded-lg bg-card w-fit">
+                    {(["all", "negative", "positive"] as const).map((tab) => {
+                      const label =
+                        tab === "all" ? `All (${filteredReviews.length})` :
+                        tab === "negative" ? `Negative (${negCount})` :
+                        `Positive (${posCount})`;
+                      return (
+                        <button
+                          key={tab}
+                          onClick={() => setActiveTab(tab)}
+                          className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
+                            activeTab === tab
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              <TabsContent value="negative">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {filteredReviews
-                    .filter((r) => r.sentiment === "negative")
-                    .map((r, i) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {tabReviews.map((r, i) => (
                       <ReviewCard key={i} review={r} />
                     ))}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="positive">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {filteredReviews
-                    .filter((r) => r.sentiment === "positive")
-                    .map((r, i) => (
-                      <ReviewCard key={i} review={r} />
-                    ))}
-                </div>
-              </TabsContent>
-            </Tabs>
+                    {tabReviews.length === 0 && (
+                      <p className="text-muted-foreground text-sm col-span-2 text-center py-8">
+                        No {activeTab !== "all" ? activeTab : ""} reviews found.
+                      </p>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
