@@ -11,6 +11,24 @@ from analysis.claude_analyzer import analyze_company
 router = APIRouter(prefix="/api/company", tags=["company"])
 
 
+@router.get("/debug")
+async def debug(name: str = Query(..., min_length=2)):
+    """Temporary endpoint to diagnose which scrapers return data."""
+    results = await asyncio.gather(
+        scrape_glassdoor(name, max_reviews=3),
+        scrape_indeed(name, max_reviews=3),
+        scrape_reddit(name, max_posts=5),
+        scrape_linkedin(name, max_results=2),
+        scrape_wikipedia(name),
+        return_exceptions=True,
+    )
+    labels = ["glassdoor", "indeed", "reddit", "linkedin", "wikipedia"]
+    return {
+        label: len(r) if isinstance(r, list) else str(r)
+        for label, r in zip(labels, results)
+    }
+
+
 @router.get("/analyze", response_model=CompanyAnalysis)
 async def analyze(
     name: str = Query(..., min_length=2, description="Company name to analyze"),
