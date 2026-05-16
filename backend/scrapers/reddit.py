@@ -1,66 +1,117 @@
-import os
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import praw
+import httpx
 from models.schemas import Review
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; CompanyIntel/1.0; research tool)",
+    "Accept": "application/json",
+}
 
-def _fetch_reddit_sync(company_name: str, max_posts: int) -> list[Review]:
-    client_id = os.getenv("REDDIT_CLIENT_ID", "")
-    client_secret = os.getenv("REDDIT_CLIENT_SECRET", "")
-    user_agent = os.getenv("REDDIT_USER_AGENT", "CompanyIntel/1.0")
+SUBREDDITS = [
+    "cscareerquestions", "jobs", "antiwork",
+    "ExperiencedDevs", "careerguidance", "AskHR", "WorkReform",
+]
 
-    reviews: list[Review] = []
 
+async def _search_reddit(client: httpx.AsyncClient, query: str, subreddit: str | None, limit: int) -> list[dict]:
+    if subreddit:
+        url = f"https://www.reddit.com/r/{subreddit}/search.json"
+    else:
+        url = "https://www.reddit.com/search.json"
+
+    params = {"q": query, "sort": "relevance", "limit": limit, "type": "link", "t": "all"}
     try:
-        reddit = praw.Reddit(
-            client_id=client_id,
-            client_secret=client_secret,
-            user_agent=user_agent,
-        )
+        resp = await client.get(url, params=params, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("data", {}).get("children", [])
+    except Exception:
+        pass
+    return []
 
-        subreddits = ["cscareerquestions", "jobs", "antiwork", "ExperiencedDevs", "careerguidance"]
-        query = f'"{company_name}" work culture OR review OR toxic OR management OR interview'
 
-        seen_ids = set()
-        for sub in subreddits:
-            try:
-                subreddit = reddit.subreddit(sub)
-                for post in subreddit.search(query, sort="relevance", limit=max_posts // len(subreddits) + 2):
-                    if post.id in seen_ids:
+async def scrape_reddit(company_name: str, max_posts: int = 20) -> list[Review]:
+    reviews: list[Review] = []
+    seen_ids: set[str] = set()
+
+    queries = [
+        f'"{company_name}" work culture',
+        f'"{company_name}" toxic workplace',
+        f'"{company_name}" employee review',
+        f'"{company_name}" interview experience',
+    ]
+
+    async with httpx.AsyncClient(headers=HEADERS, follow_redirects=True) as client:
+        # Global search across all of Reddit
+        for query in queries:
+            posts = await _search_reddit(client, query, None, 10)
+            for post in posts:
+                p = post.get("data", {})
+                post_id = p.get("id", "")
+                if post_id in seen_ids:
+                    continue
+                seen_ids.add(post_id)
+
+                title = p.get("title", "")
+                body = p.get("selftext", "").strip()[:800]
+                subreddit = p.get("subreddit", "")
+                author = p.get("author", "")
+
+                # Only include posts that actually mention the company
+                combined = (title + " " + body).lower()
+                if company_name.lower() not in combined:
+                    continue
+
+                if not title and not body:
+                    continue
+
+                reviews.append(Review(
+                    source="Reddit",
+                    author=f"u/{author}" if author and author != "[deleted]" else "Anonymous",
+                    rating=None,
+                    title=title[:200] if title else None,
+                    pros=None,
+                    cons=None,
+                    body=body or title,
+                    role=f"r/{subreddit}" if subreddit else None,
+                    date=None,
+                    sentiment=None,
+                ))
+
+                if len(reviews) >= max_posts:
+                    return reviews
+
+        # Also search key subreddits directly
+        if len(reviews) < 5:
+            for sub in SUBREDDITS[:3]:
+                posts = await _search_reddit(client, company_name, sub, 5)
+                for post in posts:
+                    p = post.get("data", {})
+                    post_id = p.get("id", "")
+                    if post_id in seen_ids:
                         continue
-                    seen_ids.add(post.id)
+                    seen_ids.add(post_id)
 
-                    body = post.selftext.strip()[:1000] if post.selftext else None
-                    if not body and len(post.title) < 20:
+                    title = p.get("title", "")
+                    body = p.get("selftext", "").strip()[:800]
+                    author = p.get("author", "")
+
+                    if not title and not body:
                         continue
 
                     reviews.append(Review(
                         source="Reddit",
-                        author=f"u/{post.author.name}" if post.author else "Anonymous",
+                        author=f"u/{author}" if author and author != "[deleted]" else "Anonymous",
                         rating=None,
-                        title=post.title[:200],
+                        title=title[:200] if title else None,
                         pros=None,
                         cons=None,
-                        body=body or post.title,
-                        role=None,
+                        body=body or title,
+                        role=f"r/{sub}",
                         date=None,
                         sentiment=None,
                     ))
+
                     if len(reviews) >= max_posts:
-                        break
-            except Exception:
-                continue
+                        return reviews
 
-    except Exception:
-        pass
-
-    return reviews
-
-
-async def scrape_reddit(company_name: str, max_posts: int = 20) -> list[Review]:
-    # PRAW is synchronous — run in a thread pool
-    loop = asyncio.get_event_loop()
-    with ThreadPoolExecutor() as pool:
-        reviews = await loop.run_in_executor(pool, _fetch_reddit_sync, company_name, max_posts)
     return reviews

@@ -17,16 +17,16 @@ async def analyze(
     if not name.strip():
         raise HTTPException(status_code=400, detail="Company name is required")
 
-    # Scrape all sources concurrently
     results = await asyncio.gather(
         scrape_glassdoor(name, max_reviews=15),
         scrape_indeed(name, max_reviews=15),
-        scrape_reddit(name, max_posts=20),
+        scrape_reddit(name, max_posts=25),
         scrape_linkedin(name, max_results=5),
         return_exceptions=True,
     )
 
     all_reviews = []
+    sources_attempted = ["Glassdoor", "Indeed", "Reddit", "LinkedIn"]
     for result in results:
         if isinstance(result, list):
             all_reviews.extend(result)
@@ -34,12 +34,16 @@ async def analyze(
     if not all_reviews:
         raise HTTPException(
             status_code=404,
-            detail=f"No reviews found for '{name}'. Try a different company name.",
+            detail=(
+                f"No reviews found for '{name}'. "
+                "This can happen when the company name is very specific or misspelled. "
+                "Try a shorter or more common version of the name."
+            ),
         )
 
     try:
         analysis = await analyze_company(name, all_reviews)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
     return analysis
