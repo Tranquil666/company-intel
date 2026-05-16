@@ -1,14 +1,18 @@
 import httpx
 from models.schemas import Review
 
+# Wikipedia API requires a meaningful User-Agent identifying the app
+HEADERS = {
+    "User-Agent": "CompanyIntel/1.0 (https://github.com/Tranquil666/company-intel; research tool)",
+    "Accept": "application/json",
+}
+
 
 async def scrape_wikipedia(company_name: str) -> list[Review]:
-    """Fetch company summary from Wikipedia's public API — always works from cloud IPs."""
     reviews: list[Review] = []
 
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx.AsyncClient(headers=HEADERS, timeout=12) as client:
         try:
-            # Search for the company article
             search_resp = await client.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={
@@ -17,6 +21,7 @@ async def scrape_wikipedia(company_name: str) -> list[Review]:
                     "srsearch": f"{company_name} company",
                     "format": "json",
                     "srlimit": 1,
+                    "formatversion": "2",
                 },
             )
             if search_resp.status_code != 200:
@@ -28,7 +33,6 @@ async def scrape_wikipedia(company_name: str) -> list[Review]:
 
             title = results[0]["title"]
 
-            # Fetch the article extract
             extract_resp = await client.get(
                 "https://en.wikipedia.org/w/api.php",
                 params={
@@ -38,20 +42,21 @@ async def scrape_wikipedia(company_name: str) -> list[Review]:
                     "exintro": True,
                     "explaintext": True,
                     "format": "json",
+                    "formatversion": "2",
                 },
             )
             if extract_resp.status_code != 200:
                 return reviews
 
-            pages = extract_resp.json().get("query", {}).get("pages", {})
-            for page in pages.values():
+            pages = extract_resp.json().get("query", {}).get("pages", [])
+            for page in pages:
                 extract = page.get("extract", "").strip()
                 if len(extract) > 100:
                     reviews.append(Review(
                         source="Wikipedia",
                         author="Wikipedia",
                         rating=None,
-                        title=f"{title} — Company Overview",
+                        title=f"{title} — Overview",
                         pros=None,
                         cons=None,
                         body=extract[:1500],
