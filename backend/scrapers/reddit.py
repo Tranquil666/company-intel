@@ -2,7 +2,7 @@ import httpx
 from models.schemas import Review
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; CompanyIntel/1.0; research tool)",
+    "User-Agent": "CompanyIntel:research:1.0 (by /u/companyintel_bot)",
     "Accept": "application/json",
 }
 
