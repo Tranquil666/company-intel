@@ -18,7 +18,7 @@ async def scrape_hackernews(company_name: str, max_results: int = 20) -> list[Re
     ]
 
     async with httpx.AsyncClient(timeout=12) as client:
-        for query in queries:
+        for query in queries[:2]:  # limit queries to avoid duplicates across similar queries
             try:
                 resp = await client.get(
                     "https://hn.algolia.com/api/v1/search",
