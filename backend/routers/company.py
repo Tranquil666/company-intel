@@ -65,3 +65,15 @@ async def analyze(
         raise HTTPException(status_code=500, detail=f"AI analysis failed: {str(e)}")
 
     return analysis
+
+
+@router.get("/nettest")
+async def nettest():
+    """Test if outbound HTTP works from this serverless function."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get("https://httpbin.org/get")
+            return {"status": r.status_code, "ok": r.status_code == 200}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
